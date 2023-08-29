@@ -23,6 +23,13 @@
       "Repository": "CRAN",
       "Hash": "b2866e62bab9378c3cc9476a1954226b"
     },
+    "GGally": {
+      "Package": "GGally",
+      "Version": "2.1.2",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "022f78c8698724b326f1838b1a98cafa"
+    },
     "MASS": {
       "Package": "MASS",
       "Version": "7.3-57",
@@ -345,6 +352,13 @@
       "Repository": "RSPM",
       "Hash": "9a6564184dc4a81daea4f1d7ce357c6a"
     },
+    "gridExtra": {
+      "Package": "gridExtra",
+      "Version": "2.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "7d7f283939f563670a697165b2cf5560"
+    },
     "gtable": {
       "Package": "gtable",
       "Version": "0.3.0",
@@ -428,6 +442,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "3d5108641f47470611a32d0bdf357a72"
+    },
+    "latex2exp": {
+      "Package": "latex2exp",
+      "Version": "0.9.4",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "e98c8626b5142cba49800be7abc4021f"
     },
     "lattice": {
       "Package": "lattice",
@@ -519,6 +540,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "01f28d4278f15c76cddbea05899c5d6f"
+    },
+    "plyr": {
+      "Package": "plyr",
+      "Version": "1.8.7",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "9c17c6ee41639ebdc1d7266546d3b627"
     },
     "prettyunits": {
       "Package": "prettyunits",
@@ -616,6 +644,13 @@
       "Repository": "RSPM",
       "Hash": "911d101becedc0fde495bd910984bdc8"
     },
+    "reshape": {
+      "Package": "reshape",
+      "Version": "0.8.9",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "603d56041d7d4fa3ceb1864b3f6ee6b1"
+    },
     "rlang": {
       "Package": "rlang",
       "Version": "1.0.2",
@@ -699,6 +734,13 @@
       "Source": "Repository",
       "Repository": "RSPM",
       "Hash": "08415af406e3dd75049afef9552e7355"
+    },
+    "tictoc": {
+      "Package": "tictoc",
+      "Version": "1.0.1",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "5acb66b0266ad1f0ebf7ffe1aa36ff4c"
     },
     "tidyr": {
       "Package": "tidyr",

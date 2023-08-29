@@ -6,4 +6,7 @@ Scripts para acompañar mi lectura de **Forecasting: Principles and Practice** 3
 
 ### renv
 
-La primera vez que se cree corra el devcontainer, abrir R y correr `renv::restore()`.
+La primera vez que se corra el devcontainer, abrir R y correr `renv::restore()`.
+
+### Httpgd en VSCode
+

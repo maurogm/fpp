@@ -201,6 +201,7 @@ us_change %>%
 #' los valores de los predictores que necesitamos.
 
 
+#' 
 #' ## Nonlinear regression
 #' 
 #' Primero habla de regresiones lineales sobre parámetros transformados.

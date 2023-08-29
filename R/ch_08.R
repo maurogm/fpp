@@ -158,3 +158,71 @@ fit %>%
     x = "Minute", y = "Number of users",
     title = "Internet usage per minute"
   )
+
+#' ## Methods with seasonality (Holt-Winters)
+#'
+#' Podemos considerar que la componente estacional es tanto aditiva como
+#' multiplicativa.
+aus_holidays <- tourism |>
+  filter(Purpose == "Holiday") |>
+  summarise(Trips = sum(Trips) / 1e3)
+fit <- aus_holidays |>
+  model(
+    additive =
+      ETS(Trips ~ error("A") + trend("A") + season("A")),
+    multiplicative =
+      ETS(Trips ~ error("M") + trend("A") + season("M"))
+  )
+fc <- fit |> forecast(h = "3 years")
+fc |>
+  autoplot(aus_holidays, level = NULL) +
+  labs(
+    title = "Australian domestic tourism",
+    y = "Overnight trips (millions)"
+  ) +
+  guides(colour = guide_legend(title = "Forecast"))
+
+#' ### Example: Holt-Winters method with daily data
+#'
+#' A continuación un ejemplo usando el Holt-Winters’ damped multiplicative method.
+#' Se dice que este esquema (ETS(M,Ad,M)) es de los más usados en la práctica.
+
+sth_cross_ped <- pedestrian |>
+  filter(
+    Date >= "2016-07-01",
+    Sensor == "Southern Cross Station"
+  ) |>
+  index_by(Date) |>
+  summarise(Count = sum(Count) / 1000)
+
+sth_cross_ped |>
+  filter(Date <= "2016-07-31") |>
+  model(
+    hw = ETS(Count ~ error("M") + trend("Ad") + season("M"))
+  ) |>
+  forecast(h = "2 weeks") |>
+  autoplot(sth_cross_ped |> filter(Date <= "2016-08-14")) +
+  labs(
+    title = "Daily traffic: Southern Cross",
+    y = "Pedestrians ('000)"
+  )
+
+#' ## Estimation and model selection
+#'
+#' La función ETS, si no se le pasa ningún parámetro, estima por sí sola
+#' el mejor modelo en función de la métrica AICc:
+
+aus_holidays <- tourism |>
+  filter(Purpose == "Holiday") |>
+  summarise(Trips = sum(Trips) / 1e3)
+
+fit <- aus_holidays |>
+  model(ETS(Trips))
+
+#' Podemos ver que el modelo elegido es un ETS(M,N,A), junto a los parámetros estimados:
+report(fit)
+
+#' Si deseamos, podemos graficar los componentes del modelo:
+components(fit) |>
+  autoplot() +
+  labs(title = "ETS(M,N,A) components")

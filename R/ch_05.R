@@ -115,6 +115,10 @@ beer_fit <- train %>%
     `Naïve` = NAIVE(Beer),
     `Seasonal naïve` = SNAIVE(Beer)
   )
+beer_fit %>% select(`Mean`) %>% feasts::gg_tsresiduals()
+beer_fit %>% select(`Seasonal naïve`) %>% augment()
+
+
 # Generate forecasts for 14 quarters
 beer_fc <- beer_fit %>% forecast(h = 14)
 beer_fc
@@ -449,7 +453,7 @@ google_fc %>%
 
 google_fc %>%
   accuracy(google_stock, list(skill = skill_score(CRPS)))
-
+CRPS(c(1,2,3), c(3,4,5))
 
 #' ## Time series cross-validation
 #'
@@ -462,20 +466,13 @@ google_fc %>%
 
 google_2015_tr <- google_2015 %>%
   stretch_tsibble(.init = 3, .step = 1) %>%
-  relocate(Date, Symbol, .id)
-google_2015_tr
-
-#' Con eso lo que hace es replicar la serie de tiempo varias veces 
-#' agregando los datos de a uno, e identificando cada repetición con
-#' la variable `.id`.
-#' 
-#' Con todos estos "datasets" distintos, podemos entrenar un modelo
-#' para cada uno y usar `accuracy` para evaluar las métricas sobre
-#' todos los modelos:
+  relocate(Date, Symbol, .id) %>% 
+  filter(.id < 3)
 google_2015_tr %>%
   model(RW(Close ~ drift())) %>%
-  forecast(h = 1) %>%
-  accuracy(google_2015)
+  forecast(h = 2) %>%
+  accuracy(google_2015, by = c(".model")) 
+  pull(MAE) %>% mean()
 
 #' Puedo comparar con la métrica sobre el modelo entrenado sobre el
 #' dataset de entrenamiento entero:

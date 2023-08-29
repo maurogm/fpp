@@ -1,0 +1,341 @@
+#' ---
+#' title: "Chapter 12: Advanced forecasting methods"
+#' author: maurogm
+#' date: "`r Sys.Date()`"
+#' output:
+#'   github_document:
+#'     toc: true
+#' ---
+
+
+#+ r knitr-global-options, include = FALSE
+knitr::opts_chunk$set(
+  warning = FALSE, message = FALSE, verbose = TRUE,
+  fig.show = "hold", fig.height = 6, fig.width = 10
+)
+knitr::opts_knit$set(root.dir = normalizePath("../"))
+
+# rmarkdown::render("R/ch_12.R", output_dir = "rendered_files", intermediates_dir = "rendered_files/intermediates")
+
+library(tidyverse)
+library(fpp3)
+library(tictoc)
+
+#'
+#' ## Link
+#' https://otexts.com/fpp3/advanced.html
+
+
+#'
+#' ## Complex seasonality
+#'
+#' ### STL with multiple seasonal periods
+#'
+#' Veamos la serie que cuenta la cantidad de llamados que entran al call center
+#' de un banco en un período de 5 minutos.
+bank_calls |>
+  fill_gaps() |>
+  autoplot(Calls) +
+  labs(
+    y = "Calls",
+    title = "Five-minute call volume to bank"
+  )
+
+#' Tiene varias complejidades:
+#'
+#' - Más de una estacionalidad (hora del día, semanal, anual).
+#' - Hay franjas horarias sin datos.
+#' - Sábados y domingos no tienen datos.
+
+#'
+#' Para sortear el problema de los baches sin datos, re indexamos la serie
+#' con la función `update_tsibble`, que crea un índice regular.
+calls <- bank_calls |>
+  mutate(t = row_number()) |>
+  update_tsibble(index = t, regular = TRUE)
+
+#' Los modelos STL tienen la capacidad de manejar múltiples estacionalidades.
+#' Podemos especificar a mano la longitud de cada período estacional (en este
+#' caso, 169 es la cantidad de períodos de 5 minutos en un día de datos).
+#' Se modela la raíz cuadrada de la serie para que los forecasts sean positivos.
+calls |>
+  model(
+    STL(sqrt(Calls) ~ season(period = 169) +
+      season(period = 5 * 169),
+    robust = TRUE
+    )
+  ) |>
+  components() |>
+  autoplot() + labs(x = "Observation")
+
+
+#' Gracias a STL, podemos usar STL para modelar las estacionalidades, y otro
+#' modelo para modelar la tendencia y el componente aleatorio:
+# Forecasts from STL+ETS decomposition
+my_dcmp_spec <- decomposition_model(
+  STL(sqrt(Calls) ~ season(period = 169) +
+    season(period = 5 * 169),
+  robust = TRUE
+  ),
+  ETS(season_adjust ~ season("N"))
+)
+fc <- calls |>
+  model(my_dcmp_spec) |>
+  forecast(h = 5 * 169)
+
+#' El modelo y el forecast ya están hechos. Pero para poder graficarlos hay
+#' que volver a transformar los índices a la escala original de fechas, lo
+#' cual es medio engorroso:
+# Add correct time stamps to fable
+fc_with_times <- bank_calls |>
+  new_data(n = 7 * 24 * 60 / 5) |>
+  mutate(time = format(DateTime, format = "%H:%M:%S")) |>
+  filter(
+    time %in% format(bank_calls$DateTime, format = "%H:%M:%S"),
+    wday(DateTime, week_start = 1) <= 5
+  ) |>
+  mutate(t = row_number() + max(calls$t)) |>
+  left_join(fc, by = "t") |>
+  # Transformo el tsibble en un fable para que se pueda plotear:
+  as_fable(response = "Calls", distribution = Calls)
+
+# Plot results with last 3 weeks of data
+fc_with_times |>
+  fill_gaps() |>
+  autoplot(
+    bank_calls |>
+      tail(14 * 169) |> # 14 días de datos, para hacer legible el gráfico
+      fill_gaps() # Para que llene los baches con NA, así no une con líneas
+  ) +
+  labs(
+    y = "Calls",
+    title = "Five-minute call volume to bank"
+  )
+
+
+#'
+#' ### Dynamic harmonic regression with multiple seasonal periods
+#'
+#' Otra opción es usar un modelo de regresión armónica dinámica, donde usamos
+#' términos de Fourier para modelar las distintas estacionalidades, y un ARIMA
+#' para el resto.
+#' 
+#' La cantidad de K pares de términos de Fourier la eligió a mano, dado que dice 
+#' que usar el AICc tiende a poner K de más.
+fit <- calls |>
+  model(
+    dhr = ARIMA(sqrt(Calls) ~
+      fourier(period = 169, K = 10) + # estacionalidad diaria
+      fourier(period = 5 * 169, K = 5) + # estacionalidad semanal
+      PDQ(0, 0, 0) + # ARIMA no debe modelar la estacionalidad
+      pdq(d = 0)) # ARIMA no se debe preocupar por la estacionariedad
+  )
+
+fc <- fit |> forecast(h = 5 * 169)
+
+#' Una vez más, hay que volver a transformar los índices a la escala original
+#' de fechas:
+# Add correct time stamps to fable
+fc_with_times <- bank_calls |>
+  new_data(n = 7 * 24 * 60 / 5) |>
+  mutate(time = format(DateTime, format = "%H:%M:%S")) |>
+  filter(
+    time %in% format(bank_calls$DateTime, format = "%H:%M:%S"),
+    wday(DateTime, week_start = 1) <= 5
+  ) |>
+  mutate(t = row_number() + max(calls$t)) |>
+  left_join(fc, by = "t") |>
+  as_fable(response = "Calls", distribution = Calls)
+
+# Plot results with last 3 weeks of data
+fc_with_times |>
+  fill_gaps() |>
+  autoplot(bank_calls |> tail(14 * 169) |> fill_gaps()) +
+  labs(y = "Calls",
+       title = "Five-minute call volume to bank")
+
+#' Los intervalos de confianza son más angostos que los de STL+ETS.
+#' Habría que ver en un test set cuál de los dos modelos es mejor.
+
+#' 
+#' ### Example: Electricity demand
+#' 
+#' Vemos un segundo ejemplo de uso de regresión armónica con múltiples
+#' estacionalidades, usando datos de demanda eléctrica.
+#' #' Estos modelos son muy complejos, dado que además del componente estacional
+#' hay un montón de variables exógenas que pueden influir en la demanda eléctrica.
+#' Por ejemplo la temperatura:
+vic_elec |>
+  pivot_longer(Demand:Temperature, names_to = "Series") |>
+  ggplot(aes(x = Time, y = value)) +
+  geom_line() +
+  facet_grid(rows = vars(Series), scales = "free_y") +
+  labs(y = "")
+
+#' Creamos también otros features relevantes, como día de semana, si es día 
+#' laboral o no, y el máximo entre la temperatura y 18, dado que este punto
+#' pareciera ser el mínimo de demanda. Esta última variable, al ser incluida
+#' junto a la temperatura, nos permitirá modelar una función lineal a trozos.
+elec <- vic_elec |>
+  mutate(
+    DOW = wday(Date, label = TRUE),
+    Working_Day = !Holiday & !(DOW %in% c("Sat", "Sun")),
+    Cooling = pmax(Temperature, 18)
+  )
+elec |>
+  ggplot(aes(x=Temperature, y=Demand, col=Working_Day)) +
+  geom_point(alpha = 0.6) +
+  labs(x="Temperature (degrees Celsius)", y="Demand (MWh)")
+
+#' Vemos que la demanda es más alta para temperaturas altas y bajas (¿cuadrática?),
+#' y que los días laborales tienen una demanda más alta que los fines de semana.
+#' 
+#' Metemos 3 estacionalidades: diaria, semanal y anual, además de las variables
+#' exógenas que creamos:
+tic()
+fit <- elec |>
+  model(
+    ARIMA(Demand ~ PDQ(0, 0, 0) + pdq(d = 0) +
+          Temperature + Cooling + Working_Day +
+          fourier(period = "day", K = 10) +
+          fourier(period = "week", K = 5) +
+          fourier(period = "year", K = 3))
+  )
+toc()
+
+#' Modelo resultante:
+fit 
+
+#' Para poder forecastear, tenemos que crear un nuevo dataset con los valores
+#' de las variables exógenas para los períodos que queremos forecastear.
+#' Asumamos que las próximas 48 horas van a tener la misma temperatura que
+#' las últimas 48 horas, y aclaremos que el día 1 de enero no es laboral:
+elec_newdata <- new_data(elec, 2*48) |>
+  mutate(
+    Temperature = tail(elec$Temperature, 2 * 48),
+    Date = lubridate::as_date(Time),
+    DOW = wday(Date, label = TRUE),
+    Working_Day = (Date != "2015-01-01") &
+                   !(DOW %in% c("Sat", "Sun")),
+    Cooling = pmax(Temperature, 18)
+  )
+fc <- fit |>
+  forecast(new_data = elec_newdata)
+fc |>
+  autoplot(elec |> tail(10 * 48)) +
+  labs(title="Half hourly electricity demand: Victoria",
+       y = "Demand (MWh)", x = "Time [30m]")
+
+#' A pesar de todo, resulta que el modelo dista de ser perfecto, como se ve
+#' en la autocorrelación de los residuos:
+fit |> gg_tsresiduals()
+
+#' ## Prophet
+#' 
+#' Ver el capítulo. [Link](https://otexts.com/fpp3/prophet.html)
+
+
+#'
+#'  ## Vector autoregressions (VARs)
+#' 
+#' Modelamos el Ingreso y el Consumo juntos, ambos en función de los lags
+#' de sí mismos y del otro. Por defecto se usa el AICc para elegir los
+#' hiperparámetros del modelo, aunque a veces es mejor usar el BIC. Ello se
+#' puede especificar con el argumento `ic`.
+fit <- us_change |>
+  model(
+    aicc = VAR(vars(Consumption, Income)),
+    bic = VAR(vars(Consumption, Income), ic = "bic")
+  )
+fit
+
+glance(fit)
+
+fit |>
+  augment() |>
+  ACF(.innov) |>
+  autoplot()
+
+
+#'
+#' ## Nerural Networks AutoRegressions (NNARs)
+#' 
+#' Usamos la función `NNETAR` para modelar la cantidad anual de manchas solares 
+#' con una red neuronal auto regresiva.
+sunspots <- sunspot.year |> as_tsibble()
+fit <- sunspots |>
+  model(NNETAR(sqrt(value)))
+
+fit |>
+  forecast(h = 30) |>
+  autoplot(sunspots) +
+  labs(x = "Year", y = "Counts", title = "Yearly sunspots")
+
+
+fit |>
+  generate(times = 9, h = 30) |>
+  autoplot(.sim) +
+  autolayer(sunspots, value) +
+  theme(legend.position = "none")
+
+
+#'
+#' ## Bootstrapping and Bagging
+#' 
+#' Primero descomponemos la serie original en tendencia, estacionalidad y
+#' reminder:
+cement <- aus_production |>
+  filter(year(Quarter) >= 1988) |>
+  select(Quarter, Cement)
+cement_stl <- cement |>
+  model(stl = STL(Cement))
+cement_stl |>
+  components() |>
+  autoplot()
+
+#' La función `generate` está preparada para tomar un modelo STL y generar
+#' series bootstrapeadas.
+#' Es importante usar un `bootstrap_block_size` razonable, para que al resamplear
+#' el reminder se utilicen bloques de datos consecutivos, y así poder mantener las
+#' relaciones de la serie original que no hayan sido captadas por STL.
+cement_stl |>
+  generate(new_data = cement, times = 10,
+           bootstrap_block_size = 8) |>
+  autoplot(.sim) +
+  autolayer(cement, Cement) +
+  guides(colour = "none") +
+  labs(title = "Cement production: Bootstrapped series",
+       y="Tonnes ('000)")
+
+#' Para poder hacer bagging, tenemos que resamplear muchísimas series, para luego
+#' entrenar un modelo distinto en cada una de ellas. Es un proceso que puede llevar
+#' un buen tiempo:
+sim <- cement_stl |>
+  generate(new_data = cement, times = 100,
+           bootstrap_block_size = 8) |>
+  select(-.model, -Cement)
+
+tic()
+ets_forecasts <- sim |>
+  model(ets = ETS(.sim)) |>
+  forecast(h = 12)
+toc()
+
+#' Esto me da luego una multitud de forecasts, uno por cada serie bootstrapeada.
+ets_forecasts |>
+  update_tsibble(key = .rep) |>
+  autoplot(.mean) +
+  autolayer(cement, Cement) +
+  guides(colour = "none") +
+  labs(title = "Cement production: bootstrapped forecasts",
+       y="Tonnes ('000)")
+
+#' Cómo consolide esta información dependerá de cuál sea mi objetivo.
+#' 
+#' - ¿Uso las medias de los forecasts, o también la incertidumbre de cada modelo?
+#' No me queda claro si al hacer eso estaría contando dos veces la incertidumbre,
+#' o haciendo lo correcto.
+#' 
+#' - ¿No debería dejar al menos la parte final de la serie sin bootstrapear,
+#' considerando que los forecasts de muchos modelos se construirán continuando
+#' desde esos puntos?
